@@ -1,0 +1,214 @@
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  OWNER
+  SCHOOL_ADMIN
+  DEPUTY_DIRECTOR
+  TEACHER
+  PARENT
+  STUDENT
+}
+
+enum AttendanceStatus {
+  PRESENT
+  EXCUSED_ABSENT
+  UNEXCUSED_ABSENT
+  EXPLANATION_PENDING
+}
+
+enum EscalationStatus {
+  PENDING
+  REMINDED_5M
+  REMINDED_7M
+  ESCALATED
+  UNASSIGNED_ESCALATION
+  COMPLETED
+  RESOLVED_AFTER_SUBMISSION
+}
+
+model School {
+  id                String               @id @default(uuid())
+  name              String
+  timezone          String               @default("Asia/Tashkent")
+  settings          SchoolSettings?
+  users             User[]
+  classes           ClassRoom[]
+  subjects          Subject[]
+  timetables        Timetable[]
+  attendanceRecords AttendanceRecord[]
+  monitoringJobs    AttendanceMonitoring[]
+  escalationCases   EscalationCase[]
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+}
+
+model SchoolSettings {
+  id                       String   @id @default(uuid())
+  schoolId                 String   @unique
+  school                   School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  reminderThreshold5Min    Int      @default(5)
+  reminderThreshold7Min    Int      @default(7)
+  escalationThreshold12Min Int      @default(12)
+  updatedAt                DateTime @updatedAt
+}
+
+model User {
+  id             String                 @id @default(uuid())
+  schoolId       String?
+  school         School?                @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  role           Role
+  fullName       String
+  phone          String                 @unique
+  passwordHash   String
+  isActive       Boolean                @default(true)
+  
+  deputyClasses  ClassRoom[]            @relation("DeputyDirectorClasses")
+  taughtClasses  Timetable[]            @relation("TeacherTimetables")
+  classTeacherOf ClassRoom[]            @relation("ClassTeacherRelation")
+  studentClassId String?
+  studentClass   ClassRoom?             @relation("ClassStudents", fields: [studentClassId], references: [id])
+  
+  parentLinks    ParentStudent[]        @relation("ParentRelation")
+  studentLinks   ParentStudent[]        @relation("StudentRelation")
+  
+  notifications  Notification[]
+  resolutions    ResolutionNote[]
+  corrections    AttendanceCorrection[]
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+}
+
+model ClassRoom {
+  id              String                 @id @default(uuid())
+  schoolId        String
+  school          School                 @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  name            String
+  classTeacherId  String?
+  classTeacher    User?                  @relation("ClassTeacherRelation", fields: [classTeacherId], references: [id])
+  deputyDirectors User[]                 @relation("DeputyDirectorClasses")
+  students        User[]                 @relation("ClassStudents")
+  timetables      Timetable[]
+  monitoring      AttendanceMonitoring[]
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+
+  @@unique([schoolId, name])
+}
+
+model Subject {
+  id         String      @id @default(uuid())
+  schoolId   String
+  school     School      @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  name       String
+  timetables Timetable[]
+}
+
+model Timetable {
+  id          String    @id @default(uuid())
+  schoolId    String
+  school      School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  classId     String
+  classRoom   ClassRoom @relation(fields: [classId], references: [id], onDelete: Cascade)
+  subjectId   String
+  subject     Subject   @relation(fields: [subjectId], references: [id])
+  teacherId   String
+  teacher     User      @relation("TeacherTimetables", fields: [teacherId], references: [id])
+  dayOfWeek   Int
+  lessonOrder Int       @default(1)
+  startTime   String
+  endTime     String
+}
+
+model AttendanceMonitoring {
+  id             String           @id @default(uuid())
+  schoolId       String
+  school         School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  classId        String
+  classRoom      ClassRoom        @relation(fields: [classId], references: [id], onDelete: Cascade)
+  date           DateTime
+  status         EscalationStatus @default(PENDING)
+  scheduledStart DateTime
+  submittedAt    DateTime?
+  escalationCase EscalationCase?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@unique([classId, date])
+}
+
+model EscalationCase {
+  id             String               @id @default(uuid())
+  schoolId       String
+  school         School               @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  monitoringId   String               @unique
+  monitoring     AttendanceMonitoring @relation(fields: [monitoringId], references: [id], onDelete: Cascade)
+  status         EscalationStatus     @default(ESCALATED)
+  assignedToId   String?
+  overdueMinutes Int
+  notes          ResolutionNote[]
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+}
+
+model ResolutionNote {
+  id             String         @id @default(uuid())
+  caseId         String
+  escalationCase EscalationCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  authorId       String
+  author         User           @relation(fields: [authorId], references: [id])
+  note           String
+  createdAt      DateTime       @default(now())
+}
+
+model AttendanceRecord {
+  id          String           @id @default(uuid())
+  schoolId    String
+  school      School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  classId     String
+  studentId   String
+  date        DateTime
+  status      AttendanceStatus
+  reason      String?
+  submittedBy String
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@unique([studentId, date])
+}
+
+model AttendanceCorrection {
+  id            String           @id @default(uuid())
+  recordId      String
+  oldStatus     AttendanceStatus
+  newStatus     AttendanceStatus
+  reason        String
+  correctedById String
+  correctedBy   User             @relation(fields: [correctedById], references: [id])
+  createdAt     DateTime         @default(now())
+}
+
+model ParentStudent {
+  parentId  String
+  parent    User   @relation("ParentRelation", fields: [parentId], references: [id], onDelete: Cascade)
+  studentId String
+  student   User   @relation("StudentRelation", fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@id([parentId, studentId])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+}

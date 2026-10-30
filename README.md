@@ -1,1 +1,1 @@
-# qubiq-school-admin
+# qubiq-owner
