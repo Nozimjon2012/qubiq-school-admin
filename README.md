@@ -1,0 +1,1 @@
+# qubiq-school-admin
